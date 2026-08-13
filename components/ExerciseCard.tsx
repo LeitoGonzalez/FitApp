@@ -1,13 +1,18 @@
 "use client";
 
+import { useState } from "react";
 import { Check, Minus, Plus } from "lucide-react";
 import type { LastSet, SessionExercise } from "@/lib/types";
 import { sanitizeDecimal, sanitizeInt } from "@/lib/storage";
+import { isSetDone, isSetValid, setDelta } from "@/lib/metrics";
 
 type Props = {
   exercise: SessionExercise;
   lastSets: LastSet[];
-  onUpdateSet: (setId: string, patch: { weight?: string; reps?: string; rir?: string; completed?: boolean }) => void;
+  onUpdateSet: (
+    setId: string,
+    patch: { weight?: string; reps?: string; rir?: string; completed?: boolean }
+  ) => void;
   onAddSet: () => void;
   onRemoveSet: (setId: string) => void;
 };
@@ -65,7 +70,22 @@ export default function ExerciseCard({
   onRemoveSet,
 }: Props) {
   const hint = lastHint(lastSets);
-  const done = exercise.sets.filter((s) => s.completed).length;
+  const done = exercise.sets.filter(isSetDone).length;
+  const [blockedId, setBlockedId] = useState<string | null>(null);
+
+  function patchSet(
+    set: SessionExercise["sets"][number],
+    patch: { weight?: string; reps?: string; rir?: string; completed?: boolean }
+  ) {
+    const next = { ...set, ...patch };
+    if (patch.completed === true && !isSetValid(next)) return false;
+    if ((patch.weight !== undefined || patch.reps !== undefined) && next.completed && !isSetValid(next)) {
+      onUpdateSet(set.id, { ...patch, completed: false });
+      return true;
+    }
+    onUpdateSet(set.id, patch);
+    return true;
+  }
 
   return (
     <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
@@ -86,17 +106,35 @@ export default function ExerciseCard({
       <div className="space-y-3">
         {exercise.sets.map((set, index) => {
           const prev = lastSets[index] ?? lastSets[lastSets.length - 1];
+          const marked = isSetDone(set);
+          const delta = setDelta(set, lastSets[index]);
+          const canComplete = isSetValid(set);
           return (
             <div
               key={set.id}
               className={`rounded-xl border p-3 transition-colors ${
-                set.completed
+                marked
                   ? "border-emerald-500/40 bg-emerald-500/10"
                   : "border-zinc-800 bg-zinc-950/60"
               }`}
             >
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-sm font-medium text-zinc-400">Serie {index + 1}</span>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-zinc-400">Serie {index + 1}</span>
+                  {delta ? (
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                        delta.kind === "up"
+                          ? "bg-emerald-500/20 text-emerald-300"
+                          : delta.kind === "down"
+                            ? "bg-amber-500/20 text-amber-300"
+                            : "bg-zinc-800 text-zinc-400"
+                      }`}
+                    >
+                      {delta.label}
+                    </span>
+                  ) : null}
+                </div>
                 <div className="flex items-center gap-1">
                   {exercise.sets.length > 1 && (
                     <button
@@ -110,18 +148,34 @@ export default function ExerciseCard({
                   )}
                   <button
                     type="button"
-                    aria-label={set.completed ? "Desmarcar serie" : "Completar serie"}
-                    onClick={() => onUpdateSet(set.id, { completed: !set.completed })}
+                    aria-label={marked ? "Desmarcar serie" : "Completar serie"}
+                    onClick={() => {
+                      if (marked) {
+                        onUpdateSet(set.id, { completed: false });
+                        setBlockedId(null);
+                        return;
+                      }
+                      if (!patchSet(set, { completed: true })) {
+                        setBlockedId(set.id);
+                        return;
+                      }
+                      setBlockedId(null);
+                    }}
                     className={`flex h-11 w-11 items-center justify-center rounded-xl touch-manipulation active:scale-95 ${
-                      set.completed
+                      marked
                         ? "bg-emerald-500 text-zinc-950"
-                        : "border border-zinc-700 bg-zinc-800 text-zinc-400"
+                        : canComplete
+                          ? "border border-zinc-700 bg-zinc-800 text-zinc-400"
+                          : "border border-zinc-800 bg-zinc-900 text-zinc-600"
                     }`}
                   >
                     <Check className="h-5 w-5" strokeWidth={2.6} />
                   </button>
                 </div>
               </div>
+              {blockedId === set.id && !canComplete ? (
+                <p className="mb-2 text-xs text-amber-300">Cargá peso y reps para marcarla lista.</p>
+              ) : null}
 
               <div className="grid grid-cols-3 gap-2">
                 <Field
@@ -129,14 +183,20 @@ export default function ExerciseCard({
                   value={set.weight}
                   placeholder={prev?.weight || ""}
                   inputMode="decimal"
-                  onChange={(v) => onUpdateSet(set.id, { weight: sanitizeDecimal(v) })}
+                  onChange={(v) => {
+                    patchSet(set, { weight: sanitizeDecimal(v) });
+                    if (blockedId === set.id) setBlockedId(null);
+                  }}
                 />
                 <Field
                   label="Reps"
                   value={set.reps}
                   placeholder={prev?.reps || ""}
                   inputMode="numeric"
-                  onChange={(v) => onUpdateSet(set.id, { reps: sanitizeInt(v) })}
+                  onChange={(v) => {
+                    patchSet(set, { reps: sanitizeInt(v) });
+                    if (blockedId === set.id) setBlockedId(null);
+                  }}
                 />
                 <Field
                   label="RIR"

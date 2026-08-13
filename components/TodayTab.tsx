@@ -2,11 +2,21 @@
 
 import { useStore } from "@/lib/store";
 import { formatLongDate, todayISO } from "@/lib/storage";
+import { isSetDone } from "@/lib/metrics";
 import ExerciseCard from "@/components/ExerciseCard";
 
 export default function TodayTab() {
-  const { data, hydrated, todaySession, setActiveRoutine, updateSet, addSet, removeSet, lastSetsFor } =
-    useStore();
+  const {
+    data,
+    hydrated,
+    todaySession,
+    setActiveRoutine,
+    updateSet,
+    addSet,
+    removeSet,
+    lastSetsFor,
+    updateNotes,
+  } = useStore();
 
   if (!hydrated) {
     return (
@@ -19,7 +29,7 @@ export default function TodayTab() {
 
   const totalSets = todaySession?.exercises.reduce((n, e) => n + e.sets.length, 0) ?? 0;
   const doneSets =
-    todaySession?.exercises.reduce((n, e) => n + e.sets.filter((s) => s.completed).length, 0) ?? 0;
+    todaySession?.exercises.reduce((n, e) => n + e.sets.filter(isSetDone).length, 0) ?? 0;
   const progress = totalSets ? Math.round((doneSets / totalSets) * 100) : 0;
 
   return (
@@ -83,7 +93,7 @@ export default function TodayTab() {
                 <ExerciseCard
                   key={exercise.exerciseId}
                   exercise={exercise}
-                  lastSets={lastSetsFor(exercise.exerciseName)}
+                  lastSets={lastSetsFor(exercise.exerciseId, exercise.exerciseName)}
                   onUpdateSet={(setId, patch) => updateSet(exercise.exerciseId, setId, patch)}
                   onAddSet={() => addSet(exercise.exerciseId)}
                   onRemoveSet={(setId) => removeSet(exercise.exerciseId, setId)}
@@ -91,6 +101,19 @@ export default function TodayTab() {
               ))}
             </div>
           )}
+
+          {todaySession ? (
+            <label className="mt-5 block">
+              <span className="mb-2 block text-sm font-medium text-zinc-300">Notas de la sesión</span>
+              <textarea
+                value={todaySession.notes}
+                onChange={(e) => updateNotes(todaySession.id, e.target.value)}
+                placeholder="¿Cómo se sintió? Dolor, sueño, etc."
+                rows={3}
+                className="w-full rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+              />
+            </label>
+          ) : null}
         </>
       )}
     </div>

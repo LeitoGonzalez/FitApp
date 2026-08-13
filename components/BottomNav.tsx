@@ -1,13 +1,14 @@
 "use client";
 
-import { CalendarDays, Dumbbell, LayoutList } from "lucide-react";
+import { CalendarDays, Dumbbell, LayoutList, TrendingUp } from "lucide-react";
 
-export type Tab = "hoy" | "rutinas" | "historial";
+export type Tab = "hoy" | "rutinas" | "historial" | "progreso";
 
 const items: { id: Tab; label: string; icon: typeof Dumbbell }[] = [
   { id: "hoy", label: "Hoy", icon: Dumbbell },
   { id: "rutinas", label: "Rutinas", icon: LayoutList },
   { id: "historial", label: "Historial", icon: CalendarDays },
+  { id: "progreso", label: "Progreso", icon: TrendingUp },
 ];
 
 export default function BottomNav({
@@ -32,7 +33,7 @@ export default function BottomNav({
               }`}
             >
               <Icon className="h-6 w-6" strokeWidth={active ? 2.4 : 1.8} />
-              <span className="text-xs font-medium">{label}</span>
+              <span className="text-[11px] font-medium">{label}</span>
             </button>
           );
         })}

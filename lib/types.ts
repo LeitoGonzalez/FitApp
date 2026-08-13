@@ -6,7 +6,7 @@ export type Exercise = {
 export type Routine = {
   id: string;
   name: string;
-  exercises: Exercise[];
+  exerciseIds: string[];
 };
 
 export type SetEntry = {
@@ -28,10 +28,13 @@ export type WorkoutSession = {
   date: string;
   routineId: string;
   routineName: string;
+  notes: string;
   exercises: SessionExercise[];
 };
 
 export type AppData = {
+  version: 2;
+  exercises: Exercise[];
   routines: Routine[];
   sessions: WorkoutSession[];
   activeRoutineId: string | null;

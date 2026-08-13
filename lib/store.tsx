@@ -14,28 +14,36 @@ import {
   defaultData,
   emptySet,
   ensureTodaySession,
-  isSessionMeaningful,
+  findExerciseByName,
   loadData,
+  normalizeName,
   saveData,
   todayISO,
   uid,
 } from "./storage";
+import { findPreviousExercise, lastSetsFrom } from "./metrics";
+
+type CatalogResult = { id: string } | { error: "empty" | "duplicate" };
 
 type StoreValue = {
   data: AppData;
   hydrated: boolean;
   todaySession: WorkoutSession | null;
-  lastSetsFor: (exerciseName: string) => LastSet[];
+  lastSetsFor: (exerciseId: string, exerciseName: string) => LastSet[];
   setActiveRoutine: (id: string) => void;
   updateSet: (exerciseId: string, setId: string, patch: Partial<SetEntry>) => void;
   addSet: (exerciseId: string) => void;
   removeSet: (exerciseId: string, setId: string) => void;
+  updateNotes: (sessionId: string, notes: string) => void;
   addRoutine: (name: string) => void;
   updateRoutineName: (id: string, name: string) => void;
   deleteRoutine: (id: string) => void;
-  addExercise: (routineId: string, name: string) => void;
-  updateExerciseName: (routineId: string, exerciseId: string, name: string) => void;
-  deleteExercise: (routineId: string, exerciseId: string) => void;
+  addExerciseToRoutine: (routineId: string, exerciseId: string) => void;
+  removeExerciseFromRoutine: (routineId: string, exerciseId: string) => void;
+  addCatalogExercise: (name: string) => CatalogResult;
+  updateCatalogExercise: (id: string, name: string) => CatalogResult;
+  deleteCatalogExercise: (id: string) => void;
+  replaceData: (next: AppData) => void;
 };
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -74,21 +82,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [data]);
 
   const lastSetsFor = useCallback(
-    (exerciseName: string): LastSet[] => {
-      const currentId = todaySession?.id;
-      const sessions = [...data.sessions]
-        .filter((s) => s.id !== currentId && isSessionMeaningful(s))
-        .sort((a, b) => b.date.localeCompare(a.date));
-
-      for (const session of sessions) {
-        const match = session.exercises.find(
-          (e) => e.exerciseName.toLowerCase() === exerciseName.toLowerCase()
-        );
-        if (match?.sets.some((s) => s.weight || s.reps)) {
-          return match.sets.map((s) => ({ weight: s.weight, reps: s.reps, rir: s.rir }));
-        }
-      }
-      return [];
+    (exerciseId: string, exerciseName: string): LastSet[] => {
+      const prev = findPreviousExercise(
+        data.sessions,
+        todaySession?.id ?? "",
+        exerciseId,
+        exerciseName
+      );
+      return lastSetsFrom(prev?.exercise);
     },
     [data.sessions, todaySession?.id]
   );
@@ -120,9 +121,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         exercises: session.exercises.map((ex) => {
           if (ex.exerciseId !== exerciseId) return ex;
           const last = ex.sets[ex.sets.length - 1];
-          const next: SetEntry = last
-            ? { ...last, id: uid(), completed: false }
-            : emptySet();
+          const next: SetEntry = last ? { ...last, id: uid(), completed: false } : emptySet();
           return { ...ex, sets: [...ex.sets, next] };
         }),
       }))
@@ -141,12 +140,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const updateNotes = useCallback((sessionId: string, notes: string) => {
+    setData((prev) => ({
+      ...prev,
+      sessions: prev.sessions.map((s) => (s.id === sessionId ? { ...s, notes } : s)),
+    }));
+  }, []);
+
   const addRoutine = useCallback((name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return;
     const id = uid();
     setData((prev) => {
-      const routines = [...prev.routines, { id, name: trimmed, exercises: [] }];
+      const routines = [...prev.routines, { id, name: trimmed, exerciseIds: [] }];
       return ensureTodaySession({
         ...prev,
         routines,
@@ -175,52 +181,77 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const addExercise = useCallback((routineId: string, name: string) => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
+  const addExerciseToRoutine = useCallback((routineId: string, exerciseId: string) => {
+    setData((prev) =>
+      ensureTodaySession({
+        ...prev,
+        routines: prev.routines.map((r) => {
+          if (r.id !== routineId || r.exerciseIds.includes(exerciseId)) return r;
+          return { ...r, exerciseIds: [...r.exerciseIds, exerciseId] };
+        }),
+      })
+    );
+  }, []);
+
+  const removeExerciseFromRoutine = useCallback((routineId: string, exerciseId: string) => {
     setData((prev) =>
       ensureTodaySession({
         ...prev,
         routines: prev.routines.map((r) =>
-          r.id !== routineId
-            ? r
-            : { ...r, exercises: [...r.exercises, { id: uid(), name: trimmed }] }
+          r.id !== routineId ? r : { ...r, exerciseIds: r.exerciseIds.filter((id) => id !== exerciseId) }
         ),
       })
     );
   }, []);
 
-  const updateExerciseName = useCallback((routineId: string, exerciseId: string, name: string) => {
+  const addCatalogExercise = useCallback((name: string): CatalogResult => {
     const trimmed = name.trim();
-    if (!trimmed) return;
+    if (!trimmed) return { error: "empty" };
+    if (findExerciseByName(data.exercises, trimmed)) return { error: "duplicate" };
+    const id = uid();
+    setData((prev) => {
+      if (findExerciseByName(prev.exercises, trimmed)) return prev;
+      return { ...prev, exercises: [...prev.exercises, { id, name: trimmed }] };
+    });
+    return { id };
+  }, [data.exercises]);
+
+  const updateCatalogExercise = useCallback((id: string, name: string): CatalogResult => {
+    const trimmed = name.trim();
+    if (!trimmed) return { error: "empty" };
+    const clash = data.exercises.find(
+      (e) => e.id !== id && normalizeName(e.name) === normalizeName(trimmed)
+    );
+    if (clash) return { error: "duplicate" };
+    setData((prev) => {
+      if (
+        prev.exercises.find((e) => e.id !== id && normalizeName(e.name) === normalizeName(trimmed))
+      ) {
+        return prev;
+      }
+      return ensureTodaySession({
+        ...prev,
+        exercises: prev.exercises.map((e) => (e.id === id ? { ...e, name: trimmed } : e)),
+      });
+    });
+    return { id };
+  }, [data.exercises]);
+
+  const deleteCatalogExercise = useCallback((id: string) => {
     setData((prev) =>
       ensureTodaySession({
         ...prev,
-        routines: prev.routines.map((r) =>
-          r.id !== routineId
-            ? r
-            : {
-                ...r,
-                exercises: r.exercises.map((e) =>
-                  e.id === exerciseId ? { ...e, name: trimmed } : e
-                ),
-              }
-        ),
+        exercises: prev.exercises.filter((e) => e.id !== id),
+        routines: prev.routines.map((r) => ({
+          ...r,
+          exerciseIds: r.exerciseIds.filter((eid) => eid !== id),
+        })),
       })
     );
   }, []);
 
-  const deleteExercise = useCallback((routineId: string, exerciseId: string) => {
-    setData((prev) =>
-      ensureTodaySession({
-        ...prev,
-        routines: prev.routines.map((r) =>
-          r.id !== routineId
-            ? r
-            : { ...r, exercises: r.exercises.filter((e) => e.id !== exerciseId) }
-        ),
-      })
-    );
+  const replaceData = useCallback((next: AppData) => {
+    setData(ensureTodaySession(next));
   }, []);
 
   const value = useMemo<StoreValue>(
@@ -233,12 +264,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updateSet,
       addSet,
       removeSet,
+      updateNotes,
       addRoutine,
       updateRoutineName,
       deleteRoutine,
-      addExercise,
-      updateExerciseName,
-      deleteExercise,
+      addExerciseToRoutine,
+      removeExerciseFromRoutine,
+      addCatalogExercise,
+      updateCatalogExercise,
+      deleteCatalogExercise,
+      replaceData,
     }),
     [
       data,
@@ -249,12 +284,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updateSet,
       addSet,
       removeSet,
+      updateNotes,
       addRoutine,
       updateRoutineName,
       deleteRoutine,
-      addExercise,
-      updateExerciseName,
-      deleteExercise,
+      addExerciseToRoutine,
+      removeExerciseFromRoutine,
+      addCatalogExercise,
+      updateCatalogExercise,
+      deleteCatalogExercise,
+      replaceData,
     ]
   );
 
