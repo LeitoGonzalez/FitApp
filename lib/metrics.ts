@@ -46,10 +46,32 @@ export function formatSetLine(set: SetEntry): string {
   return `${load} ${reps}${rir}`.replace(/\s+/g, " ").trim();
 }
 
+export function formatReadableSetGroup(count: number, set: Pick<LastSet, "weight" | "reps" | "rir">): string {
+  const n = count === 1 ? "1 serie" : `${count} series`;
+  const weight = set.weight ? `${set.weight} kg` : "sin peso";
+  const reps = set.reps ?? "—";
+  const rir = set.rir !== "" ? `, RIR ${set.rir}` : "";
+  return `${n} de ${weight} × ${reps}${rir}`;
+}
+
+export function formatReadableSets(sets: Pick<LastSet, "weight" | "reps" | "rir">[]): string {
+  const filled = sets.filter((s) => s.weight || s.reps);
+  const groups: { count: number; set: (typeof filled)[number] }[] = [];
+  for (const set of filled) {
+    const last = groups[groups.length - 1];
+    const same =
+      last &&
+      last.set.weight === set.weight &&
+      last.set.reps === set.reps &&
+      last.set.rir === set.rir;
+    if (same) last.count += 1;
+    else groups.push({ count: 1, set });
+  }
+  return groups.map((g) => formatReadableSetGroup(g.count, g.set)).join(" · ");
+}
+
 export function formatSetsCompact(exercise: SessionExercise): string {
-  return loggedSets(exercise)
-    .map((s) => `${s.weight || "—"}×${s.reps || "—"}`)
-    .join(", ");
+  return formatReadableSets(loggedSets(exercise));
 }
 
 export function bestSetLabel(exercise: SessionExercise): string {

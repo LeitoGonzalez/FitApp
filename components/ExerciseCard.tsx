@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Check, Minus, Plus } from "lucide-react";
 import type { LastSet, SessionExercise } from "@/lib/types";
 import { sanitizeDecimal, sanitizeInt } from "@/lib/storage";
-import { isSetDone, isSetValid, setDelta } from "@/lib/metrics";
+import { formatReadableSets, isSetDone, isSetValid, setDelta } from "@/lib/metrics";
 
 type Props = {
   exercise: SessionExercise;
@@ -16,19 +16,6 @@ type Props = {
   onAddSet: () => void;
   onRemoveSet: (setId: string) => void;
 };
-
-function lastHint(lastSets: LastSet[]): string | null {
-  const filled = lastSets.filter((s) => s.weight || s.reps);
-  if (!filled.length) return null;
-  return filled
-    .map((s) => {
-      const load = s.weight ? `${s.weight} kg` : "—";
-      const reps = s.reps ? `× ${s.reps}` : "";
-      const rir = s.rir !== "" ? ` @${s.rir}` : "";
-      return `${load} ${reps}${rir}`.replace(/\s+/g, " ").trim();
-    })
-    .join("  ·  ");
-}
 
 function Field({
   label,
@@ -69,7 +56,7 @@ export default function ExerciseCard({
   onAddSet,
   onRemoveSet,
 }: Props) {
-  const hint = lastHint(lastSets);
+  const lastSummary = formatReadableSets(lastSets);
   const done = exercise.sets.filter(isSetDone).length;
   const [blockedId, setBlockedId] = useState<string | null>(null);
 
@@ -89,18 +76,20 @@ export default function ExerciseCard({
 
   return (
     <section className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
+      <div className="mb-3">
+        <div className="flex items-start justify-between gap-3">
           <h2 className="text-base font-semibold leading-tight text-zinc-50">{exercise.exerciseName}</h2>
-          {hint ? (
-            <p className="mt-1 text-xs leading-snug text-zinc-400">Última: {hint}</p>
-          ) : (
-            <p className="mt-1 text-xs text-zinc-600">Sin registro previo</p>
-          )}
+          <span className="shrink-0 rounded-full bg-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-300">
+            {done}/{exercise.sets.length}
+          </span>
         </div>
-        <span className="shrink-0 rounded-full bg-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-300">
-          {done}/{exercise.sets.length}
-        </span>
+        {lastSummary ? (
+          <p className="mt-1.5 text-xs leading-relaxed text-zinc-400">
+            Última vez: {lastSummary}
+          </p>
+        ) : (
+          <p className="mt-1 text-xs text-zinc-600">Sin registro previo</p>
+        )}
       </div>
 
       <div className="space-y-3">
