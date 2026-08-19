@@ -5,6 +5,7 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { resolveExercises } from "@/lib/storage";
 import ExercisesPanel from "@/components/ExercisesPanel";
+import ReorderableExerciseList from "@/components/ReorderableExerciseList";
 
 export default function RoutinesTab() {
   const {
@@ -15,6 +16,7 @@ export default function RoutinesTab() {
     deleteRoutine,
     addExerciseToRoutine,
     removeExerciseFromRoutine,
+    reorderRoutineExercises,
     addCatalogExercise,
   } = useStore();
 
@@ -168,24 +170,14 @@ export default function RoutinesTab() {
                       </button>
                     </div>
 
-                    <ul className="space-y-2">
-                      {items.map((exercise) => (
-                        <li
-                          key={exercise.id}
-                          className="flex items-center gap-2 rounded-xl bg-zinc-950/70 px-3 py-2"
-                        >
-                          <span className="flex-1 truncate text-sm text-zinc-200">{exercise.name}</span>
-                          <button
-                            type="button"
-                            aria-label="Quitar de la rutina"
-                            onClick={() => removeExerciseFromRoutine(routine.id, exercise.id)}
-                            className="flex h-10 w-10 items-center justify-center text-zinc-500 touch-manipulation"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+                    {items.length > 1 ? (
+                      <p className="mb-2 text-xs text-zinc-500">Arrastrá las rayitas para reordenar</p>
+                    ) : null}
+                    <ReorderableExerciseList
+                      items={items}
+                      onReorder={(exerciseIds) => reorderRoutineExercises(routine.id, exerciseIds)}
+                      onRemove={(id) => removeExerciseFromRoutine(routine.id, id)}
+                    />
 
                     {available.length > 0 ? (
                       <form

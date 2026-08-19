@@ -40,6 +40,7 @@ type StoreValue = {
   deleteRoutine: (id: string) => void;
   addExerciseToRoutine: (routineId: string, exerciseId: string) => void;
   removeExerciseFromRoutine: (routineId: string, exerciseId: string) => void;
+  reorderRoutineExercises: (routineId: string, exerciseIds: string[]) => void;
   addCatalogExercise: (name: string) => CatalogResult;
   updateCatalogExercise: (id: string, name: string) => CatalogResult;
   deleteCatalogExercise: (id: string) => void;
@@ -204,6 +205,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const reorderRoutineExercises = useCallback((routineId: string, exerciseIds: string[]) => {
+    setData((prev) =>
+      ensureTodaySession({
+        ...prev,
+        routines: prev.routines.map((r) => (r.id === routineId ? { ...r, exerciseIds } : r)),
+      })
+    );
+  }, []);
+
   const addCatalogExercise = useCallback((name: string): CatalogResult => {
     const trimmed = name.trim();
     if (!trimmed) return { error: "empty" };
@@ -270,6 +280,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deleteRoutine,
       addExerciseToRoutine,
       removeExerciseFromRoutine,
+      reorderRoutineExercises,
       addCatalogExercise,
       updateCatalogExercise,
       deleteCatalogExercise,
@@ -290,6 +301,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deleteRoutine,
       addExerciseToRoutine,
       removeExerciseFromRoutine,
+      reorderRoutineExercises,
       addCatalogExercise,
       updateCatalogExercise,
       deleteCatalogExercise,
